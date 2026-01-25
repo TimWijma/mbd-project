@@ -41,8 +41,11 @@ lastfm_artists = (
 
 df_msd = spark.read \
     .option("header", "true") \
-    .option("inferSchema", "true") \
+    .option("quote", "\"") \
+    .option("escape", "\"") \
+    .option("multiLine", "true") \
     .csv("/data/doina/OSCD-MillionSongDataset/output_*.csv")
+
 
 # Number of songs each artist has in the MSD
 msd_artist_song_counts = (
@@ -61,3 +64,15 @@ msd_artists_3plus = msd_artist_song_counts.filter(col("num_songs") >= 3)
 #    .join(msd_artists_3plus, on="artist_mbid", how="inner")
 #)
 
+df_msd_bridge = df_msd \
+    .select(
+        col("track_id").alias("msd_track_id"), 
+        col("artist_mbid").alias("msd_artist_mbid")
+    )
+
+
+artists_with_lyrics = df_mxm.join(
+    df_msd_bridge,
+    df_mxm.msd_track_id == df_msd_bridge.msd_track_id,
+    "inner"
+).select(col("msd_artist_mbid").alias("artist_mbid")).distinct()
