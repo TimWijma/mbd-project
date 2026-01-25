@@ -1,11 +1,10 @@
 from pyspark.sql import SparkSession
-from pyspark.sql.types import StructType, StringType, IntegerType 
+from pyspark.sql.types import StructType, StringType, IntegerType
 from pyspark.sql.functions import col, split, expr, size, udf, countDistinct
 from pyspark.sql import functions as F
 import nltk
 from nltk.stem import PorterStemmer
 
-# Initialize Spark
 spark = SparkSession.builder \
     .appName("lastfm_sentiment") \
     .config("spark.sql.shuffle.partitions", "200") \
@@ -28,7 +27,6 @@ artist_schema = StructType() \
     .add("artist_name", StringType(), True) \
     .add("plays", IntegerType(), True)
 
-# Load Users and filter for valid demographics immediately
 lastfm_users = (
 	spark.read
 	.option("delimiter", "\t")
@@ -41,7 +39,6 @@ lastfm_users = lastfm_users.filter(
     (col("gender").isin("m", "f"))
 )
 
-# Load User Plays
 lastfm_user_artists = (
         spark.read
         .option("delimiter", "\t")
@@ -61,11 +58,11 @@ df_msd = spark.read \
     .csv("/data/doina/OSCD-MillionSongDataset/output_*.csv")
 
 # distinct() is important here to prevent duplicating sentiments if tracks appear multiple times in MSD metadata
-# msd_lookup = df_msd.select("track_id", "artist_mbid").distinct()
+msd_lookup = df_msd.select("track_id", "artist_mbid").distinct()
 # msd_lookup.write.mode("overwrite").parquet("/user/s2996499/msd_lookup_optimized")
 
 # Use saved DF instead to speed up loading time
-msd_lookup = spark.read.parquet("/user/s2996499/msd_lookup_optimized")
+# msd_lookup = spark.read.parquet("/user/s2996499/msd_lookup_optimized")
 
 # ==========================================
 # 3. Load Musixmatch & Process Text
@@ -74,21 +71,20 @@ msd_lookup = spark.read.parquet("/user/s2996499/msd_lookup_optimized")
 mxm_files_path = "/user/s2996499/musixmatch/mxm_dataset_*.txt"
 mxm_train_path = "/user/s2996499/musixmatch/mxm_dataset_train.txt"
 
-# Extract Vocabulary
 df_text = spark.read.text(mxm_train_path)
 vocab_row = df_text.filter(col("value").startswith("%")).first()
 
 if vocab_row:
     line = vocab_row['value']
     raw_vocab = line[1:].strip().split(",")
-    # Add dummy at index 0 because MXM IDs are 1-based
+    # MXM is 1 based indexed (??), so add a dummy value so we can use index on the vocab directly
     vocab_list = ["<DUMMY_INDEX_0>"] + raw_vocab
     print(f"Vocab loaded. Size: {len(vocab_list)}")
 else:
     raise ValueError("Could not find vocabulary header (%) in train file.")
 
-# Load and Parse Bag of Words
 raw_rdd = spark.read.text(mxm_files_path)
+# #'s are comments, vocab starts with % but has already been extracted, so remove it
 clean_rdd = raw_rdd.filter(
     ~col("value").startswith("#") &
     ~col("value").startswith("%")
@@ -110,7 +106,7 @@ df_final = df_parsed.filter(size(col("word_counts_raw")) > 0)
 
 stemmer = PorterStemmer()
 
-# DOUBLE CHECK THIS PATH CASE SENSITIVITY
+# this should be a relative path? anyone else running this will get an error
 afinn_path = "file:///home/s2996499/Project/AFINN-en-165.txt"
 
 afinn_df = spark.read.format("csv") \
@@ -206,7 +202,5 @@ print("Sentiment Trends by Country and Gender:")
 result_df.show(20)
 
 # Save to HDFS with Overwrite mode
-output_path = "/user/s2996499/output_sentiment_trends.csv"
-result_df.write.mode("overwrite").csv(output_path, header=True)
-
-spark.stop()
+# output_path = "/user/s2996499/output_sentiment_trends.csv"
+# result_df.write.mode("overwrite").csv(output_path, header=True)
