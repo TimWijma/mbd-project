@@ -15,11 +15,11 @@ spark = SparkSession.builder \
 # ==========================================
 
 user_schema = StructType() \
-	.add("user_id", StringType(), True) \
-	.add("gender", StringType(), True) \
-	.add("age", IntegerType(), True) \
-	.add("country", StringType(), True) \
-	.add("signup", StringType(), True)
+    .add("user_id", StringType(), True) \
+    .add("gender", StringType(), True) \
+    .add("age", IntegerType(), True) \
+    .add("country", StringType(), True) \
+    .add("signup", StringType(), True)
 
 artist_schema = StructType() \
     .add("user_id", StringType(), True) \
@@ -28,10 +28,10 @@ artist_schema = StructType() \
     .add("plays", IntegerType(), True)
 
 lastfm_users = (
-	spark.read
-	.option("delimiter", "\t")
-	.schema(user_schema)
-	.csv("/user/s2996499/lastfm-dataset-360K/usersha1-profile.tsv")
+    spark.read
+    .option("delimiter", "\t")
+    .schema(user_schema)
+    .csv("/user/s2996499/lastfm-dataset-360K/usersha1-profile.tsv")
 )
 
 lastfm_users = lastfm_users.filter(
@@ -58,11 +58,11 @@ df_msd = spark.read \
     .csv("/data/doina/OSCD-MillionSongDataset/output_*.csv")
 
 # distinct() is important here to prevent duplicating sentiments if tracks appear multiple times in MSD metadata
-msd_lookup = df_msd.select("track_id", "artist_mbid").distinct()
+# msd_lookup = df_msd.select("track_id", "artist_mbid").distinct()
 # msd_lookup.write.mode("overwrite").parquet("/user/s2996499/msd_lookup_optimized")
 
 # Use saved DF instead to speed up loading time
-# msd_lookup = spark.read.parquet("/user/s2996499/msd_lookup_optimized")
+msd_lookup = spark.read.parquet("/user/s2996499/msd_lookup_optimized")
 
 # ==========================================
 # 3. Load Musixmatch & Process Text
@@ -132,6 +132,7 @@ def lyrics_score(lyrics_list):
     
     total_score = 0
     scores_lookup = broadcast_scores.value
+    words_counted = 0
     
     for item in lyrics_list:
         try:
@@ -140,10 +141,13 @@ def lyrics_score(lyrics_list):
             count = int(parts[1])
             word_sentiment = scores_lookup.get(word_id, 0)
             total_score += (word_sentiment * count)
+            words_counted += count
         except (ValueError, IndexError):
             continue
+
+
             
-    return total_score
+    return total_score / words_counted if words_counted > 0 else 0
 
 lyrics_score_udf = udf(lyrics_score, IntegerType())
 
@@ -202,5 +206,5 @@ print("Sentiment Trends by Country and Gender:")
 result_df.show(20)
 
 # Save to HDFS with Overwrite mode
-# output_path = "/user/s2996499/output_sentiment_trends.csv"
-# result_df.write.mode("overwrite").csv(output_path, header=True)
+output_path = "/user/s2996499/output_sentiment_trends"
+result_df.write.mode("overwrite").csv(output_path, header=True)
